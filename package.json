@@ -1,0 +1,11 @@
+{
+  "name": "Doodlebob",
+  "version": "0.0.1",
+  "description": "Bwah",
+  "main": "app.js",
+  "author": "solskido",
+  "dependencies": {
+    "discord.js": "^11.5.1",
+    "lodash": "^4.17.11"
+  }
+}
