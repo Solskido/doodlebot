@@ -4,7 +4,17 @@ const _ = require("lodash");
 
 const internals = {};
 
-const token = require("./auth.json").token;
+let token;
+try {
+  token = require("./auth.json").token;
+}
+catch(e) {
+  token = process.env.token;
+}
+
+if(!token) {
+  console.log("Failed to start. No token. Soiled it.");
+}
 
 const SPAM_INTERVAL = 4000;
 const GIBBERISH = [
