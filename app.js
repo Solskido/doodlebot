@@ -66,7 +66,7 @@ client.on("message", (message) => {
       "embed": {
         "color": 11699390,
         "title": "The magic conch says...",
-        "description": CONCH[internals.random(0, (CONCH.length - 1))]
+        "description": _.sample(CONCH)
       }
     });
   }
@@ -162,7 +162,7 @@ internals.chance = (percent) => {
 };
 
 internals.random = (floor, ceiling) => {
-  return Math.floor((Math.random() * (ceiling - floor)) + floor);
+  return Math.floor((Math.random() * ((ceiling - floor) + 1)) + floor);
 };
 
 internals.capitalize = (string) => {
@@ -170,15 +170,10 @@ internals.capitalize = (string) => {
 };
 
 internals.generateGibberish = () => {
-  const wordCount = internals.random(1, 6);
   const words = [];
   let i;
-  for(i = 0; i < wordCount; i++) {
-    const index = internals.random(0, (GIBBERISH.length - 1));
-    //console.log(index);
-    //console.log(GIBBERISH[index]);
-
-    words.push(GIBBERISH[index]);
+  for(i = internals.random(1, 6); i > 0; i--) {
+    words.push(_.sample(GIBBERISH));
   }
 
   let gibberish = "";
