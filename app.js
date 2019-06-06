@@ -29,6 +29,12 @@ const GIBBERISH = [
   "hala",
   "ba"
 ];
+const CONCH = [
+  "Maybe someday.",
+  "Yes.",
+  "No.",
+  "Try asking again."
+];
 
 let lastChatted = 0;
 
@@ -45,7 +51,16 @@ client.on("message", (message) => {
   }
 
   console.log(`Incoming message: ${message.content}`);
-  if(internals.isTalkingToMe(message)
+  if(internals.isConchCommand(message)) {
+    message.channel.send({
+      "embed": {
+        "color": 11699390,
+        "title": "The magic conch says...",
+        "description": CONCH[internals.random(0, (CONCH.length - 1))]
+      }
+    });
+  }
+  else if(internals.isTalkingToMe(message)
   || internals.isTalkingAboutMe(message)) {
     //console.log("Message to me.");
 
@@ -86,6 +101,10 @@ client.on("message", (message) => {
   }
   */
 });
+
+internals.isConchCommand = (message) => {
+  return (message.content.substr(0, 11).toLowerCase() === "magic conch");
+};
 
 internals.isMe = (string) => {
   if(string === client.user.id) {
