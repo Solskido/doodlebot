@@ -43,7 +43,8 @@ const CONCH = [
   "Maybe someday.",
   "Yes.",
   "No.",
-  "Try asking again."
+  "Nothing."
+  //"Try asking again."
 ];
 
 let lastChatted = 0;
