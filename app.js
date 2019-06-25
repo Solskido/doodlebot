@@ -64,6 +64,7 @@ client.on("message", (message) => {
   console.log(`Incoming message: ${message.content}`);
   if(internals.isChooseCommand(message)) {
     const parsedChooseCommand = internals.parseChooseCommand(message);
+console.log(parsedChooseCommand);
     if((parsedChooseCommand.selectionCount >= parsedChooseCommand.choices.length)
     || (parsedChooseCommand.selectionCount >= _.uniq(parsedChooseCommand.choices).length)) {
       message.channel.send({
@@ -184,6 +185,11 @@ internals.parseChooseCommand = (message) => {
   const choices = [];
   const split = message.content.split(",");
   _.forEach(split, (csv, i) => {
+    csv = csv.trim();
+    if(!csv) {
+      return;
+    }
+
     if(csv.substr(0, 11).toLowerCase() === "magic conch") {
       csv = csv.substr(11).trim();
     }
@@ -192,7 +198,9 @@ internals.parseChooseCommand = (message) => {
       csv = _.tail(_.compact(csv.substr(4).split(" "))).join(" ");
     }
 
-    choices.push(csv.trim());
+    if(csv.trim()) {
+      choices.push(csv.trim());
+    }
   });
 
   return {
