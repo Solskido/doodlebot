@@ -1,22 +1,30 @@
-const Discord = require("discord.js");
-const client = new Discord.Client();
-const _ = require("lodash");
-
-const internals = {};
-
 let token;
+let IS_TEST = false;
 try {
-  token = require("./auth.json").token;
+  const auth = require("./auth.json");
+  token = auth.token;
+  IS_TEST = auth.botTest;
 }
 catch(e) {
   token = process.env.token;
+  IS_TEST = process.env.botTest;
 }
 
 if(!token) {
-  console.log("Failed to start. No token. Soiled it.");
+  console.log("No token. Soiled it.");
+  return 0;
 }
 
-const SPAM_INTERVAL = 4000;
+const Discord = require("discord.js");
+const client = new Discord.Client();
+const _ = require("lodash");
+const db = require("./lib/db.js");
+const log = require("./lib/log.js");
+const chrono = require("chrono-node");
+
+const internals = {};
+
+const SPAM_INTERVAL = 1000;
 const GIBBERISH = [
   "meahoy",
   "memoyay",
@@ -51,98 +59,51 @@ let lastChatted = 0;
 
 client.once("ready", () => {
   console.log("Ready for action!");
+
+  log("Setting up reminders.");
+
+  let belated = false;
+  const now = new Date();
+  db.reminders.find()
+  .then((allReminders) => {
+    _.forEach(allReminders, (reminder) => {
+      if(new Date(reminder.when).getTime() < now.getTime()) {
+        internals.executeReminder(reminder);
+        belated = true;
+      }
+      else {
+        client.setTimeout(internals.executeReminder, internals.msBetween(reminder.when), reminder);
+      }
+    });
+
+    if(belated) {
+      internals.sendMessage(client.channels.get(allReminders[0].channel), "Sorry if these reminders are late :\\", true);
+    }
+
+    log("Finished setting up reminders.");
+  })
+  .catch(log);
 });
 
 client.login(token);
 
 client.on("message", (message) => {
   if(message.author.id === client.user.id) {
-    //console.log("Message from self.");
+    log("Message from self.");
     return;
   }
 
-  console.log(`Incoming message: ${message.content}`);
-  if(internals.isChooseCommand(message)) {
-    const parsedChooseCommand = internals.parseChooseCommand(message);
-console.log(parsedChooseCommand);
-    if((parsedChooseCommand.selectionCount >= parsedChooseCommand.choices.length)
-    || (parsedChooseCommand.selectionCount >= _.uniq(parsedChooseCommand.choices).length)) {
-      message.channel.send({
-        "embed": {
-          "color": 11699390,
-          "title": "The magic conch says...",
-          "description": "...really?"
-        }
-      });
-
-      return;
-    }
-
-    let picks = [];
-    let i;
-    for(i = 0; i < parsedChooseCommand.selectionCount; i++) {
-      const pick = _.sample(parsedChooseCommand.choices);
-      picks.push(pick);
-      parsedChooseCommand.choices = _.without(parsedChooseCommand, pick);
-    }
-
-    message.channel.send({
-      "embed": {
-        "color": 11699390,
-        "title": "The magic conch says...",
-        "description": picks.join(", ")
-      }
-    });
-  }
-  else if(internals.isConchCommand(message)) {
-    message.channel.send({
-      "embed": {
-        "color": 11699390,
-        "title": "The magic conch says...",
-        "description": _.sample(CONCH)
-      }
-    });
-  }
-  else if(internals.isTalkingToMe(message)
-  || internals.isTalkingAboutMe(message)) {
-    //console.log("Message to me.");
-
-    const now = new Date().getTime();
-    if(!lastChatted
-    || ((now - lastChatted) >= SPAM_INTERVAL)) {
-      //console.log("Not spamming, respond!");
-
-      lastChatted = now;
-      message.channel.send(internals.generateGibberish());
-    }
-    else {
-      //console.log("Spem prevented.");
-    }
-  }
-  else {
-    //console.log("Message not to me.");
+  log("Message received! " + message.content);
+  const command = internals.parseCommand(message);
+  if(!command.isCommand) {
+    log("Not a command");
     return;
   }
 
-  /*
-  if(internals.isTalkingToMe(message)) {
-    const command = internals.parseCommand(message);
-
-    if(command.isCommand) {
-     command.execute();
-    }
-
-    //
+  if(!internals.imSpamming()) {
+    log("Executing a command");
+    command.execute();
   }
-  else if(internals.isTalkingAboutMe(message)) {
-    const now = new Date().getTime();
-    if(!lastChatted
-    || ((now - lastChatted) >= SPAM_INTERVAL)) {
-      lastChatted = now;
-      message.channel.send("Bwah.");
-    }
-  }
-  */
 });
 
 internals.isConchCommand = (message) => {
@@ -290,12 +251,128 @@ internals.isTalkingAboutMe = (message) => {
   });
 };
 
-internals.parseCommand = (message) => {
-  return {
-    "isCommand": false,
-    "execute": () => _.noop
-  };
+internals.noopCommand = {
+  "isCommand": false,
+  "execute": _.noop
 };
+internals.parseCommand = (message) => {
+  log("Parsing...");
+
+  if(internals.isChooseCommand(message)) {
+    log("...is pick one command");
+
+    return {
+      "isCommand": true,
+      "execute": () => {
+        const parsedChooseCommand = internals.parseChooseCommand(message);
+        if((parsedChooseCommand.selectionCount >= parsedChooseCommand.choices.length)
+        || (parsedChooseCommand.selectionCount >= _.uniq(parsedChooseCommand.choices).length)) {
+          return internals.sendConchMessage(message.channel, {
+            "embed": {
+              "color": 11699390,
+              "title": "The magic conch says...",
+              "description": "...really?"
+            }
+          }, true);
+        }
+
+        let picks = [];
+        let i;
+        for(i = 0; i < parsedChooseCommand.selectionCount; i++) {
+          const pick = _.sample(parsedChooseCommand.choices);
+          picks.push(pick);
+          parsedChooseCommand.choices = _.without(parsedChooseCommand, pick);
+        }
+
+        return internals.sendConchMessage(message.channel, {
+          "embed": {
+            "color": 11699390,
+            "title": "The magic conch says...",
+            "description": picks.join(", ")
+          }
+        }, true);
+      }
+    };
+  }
+  else if(internals.isConchCommand(message)) {
+    log("...is conch command");
+
+    return {
+      "isCommand": true,
+      "execute": () => {
+        internals.sendConchMessage(message.channel, _.sample(CONCH), true);
+      }
+    };
+  }
+  else if(internals.isRemindMeDebugCommand(message)) {
+    log("...is remind me debug command");
+
+    const isBotAdmin = internals.isBotAdmin(message.member);
+    log(isBotAdmin);
+
+    if(!isBotAdmin) {
+      log("Is not admin.");
+      return internals.noopCommand;
+    }
+
+    log("Is admin.");
+    return {
+      "isCommand": true,
+      "execute": () => {
+        log("Executing remind me debug command.");
+        db.reminders.find({})
+        .then((reminders) => {
+          internals.sendMessage(message.author, JSON.stringify(reminders, null, 2), true);
+          internals.sendMessage(message.channel, "DM sent.", true);
+        })
+        .catch((err) => {
+          log(err);
+        });
+      }
+    };
+  }
+  else if(internals.isRemindMeCommand(message)) {
+    log("...is remind me command");
+
+    return {
+      "isCommand": true,
+      "execute": () => {
+        internals.executeRemindMeCommand(message);
+      }
+    };
+  }
+  else if(internals.isTalkingToMe(message)
+  || internals.isTalkingAboutMe(message)) {
+    log("...is talking to or about me");
+
+    return {
+      "isCommand": true,
+      "execute": () => {
+        internals.executeGibberishCommand(message.channel);
+      }
+    };
+  }
+
+  log("Not a relevant message.");
+
+  return internals.noopCommand;
+};
+
+internals.isBotAdmin = (member) => {
+  log(`Checking if member is bot admin... ${member.user.username}.`)
+
+  const rolesNames = _.map(member.roles.array(), (role) => {
+    return role.name.toLowerCase();
+  });
+
+  if(_.includes(rolesNames, "bot admin")) {
+    log("Is admin.");
+    return true;
+  }
+
+  log(`A non-admin user (${member.user.username}#${member.user.discriminator}) attempted an admin bot command.`);
+  return false;
+}
 
 internals.chance = (percent) => {
   return ((Math.random() * 100) <= percent);
@@ -309,17 +386,15 @@ internals.capitalize = (string) => {
   return `${string.substr(0, 1).toUpperCase()}${string.substr(1)}`;
 };
 
-internals.generateGibberish = () => {
+internals.generateGibberish = (a, b) => {
   const words = [];
   let i;
-  for(i = internals.random(1, 6); i > 0; i--) {
+  for(i = internals.random(a, b); i > 0; i--) {
     words.push(_.sample(GIBBERISH));
   }
 
   let gibberish = "";
   _.forEach(words, (word, index) => {
-    //console.log(word);
-
     if(index === 0) {
       gibberish += internals.capitalize(word);
     }
@@ -354,3 +429,350 @@ internals.generateGibberish = () => {
   return gibberish;
 };
 
+internals.sendMessage = (channel, message, always) => {
+  if(!always
+  && internals.imSpamming()) {
+    return Promise.reject(new Error("Spamming"));
+  }
+
+  return channel.send(message)
+  .then(() => {
+    internals.messageWasSent();
+  });
+};
+
+internals.sendConchMessage = (channel, content, always) => {
+  return internals.sendMessage(channel, {
+    "embed": {
+      "color": 11699390,
+      "title": "The magic conch says...",
+      "description": content
+    }
+  }, always);
+};
+
+internals.messageWasSent = () => {
+  lastChatted = new Date().getTime();
+};
+
+internals.imSpamming = () => {
+  const now = new Date().getTime();
+  if(!lastChatted
+  || ((now - lastChatted) >= SPAM_INTERVAL)) {
+    log("I'm not spamming");
+    return false;
+  }
+
+  log("I'm spamming");
+  return true;
+};
+
+internals.executeGibberishCommand = (channel) => {
+  internals.sendMessage(channel, internals.generateGibberish(1, 6));
+};
+
+internals.isRemindMeDebugCommand = (message) => {
+  return (message.content === "!allreminders");
+};
+
+internals.isRemindMeCommand = (message) => {
+  if(!internals.isTalkingAboutMe(message)
+  && !internals.isTalkingToMe(message)) {
+    return false;
+  }
+
+  const words = _.words(message.content);
+  if(_.includes(words, "remind")) {
+    return true;
+  }
+
+  return false;
+};
+
+internals.executeRemindMeCommand = (message, whenMessage, whoMessage, whatMessage) => {
+
+  // When
+  let when = new Date();
+  let dateTimeResult;
+  if(whenMessage) {
+    dateTimeResult = internals.extractDatetimeFrom(whenMessage.content);
+  }
+  else {
+    dateTimeResult = internals.extractDatetimeFrom(message.content);
+  }
+
+  if(!dateTimeResult.isDatetime) {
+    if(!whenMessage) {
+      return internals.promptFor(message, `When should I remind you <@${message.author.id}>?`)
+      .then((message2) => {
+        internals.executeRemindMeCommand(message, message2, whoMessage, whatMessage);
+      })
+      .catch(log);
+    }
+    else {
+      internals.sendMessage(message.channel, `<@${message.author.id}>, I have no idea when that is.`, true);
+      return;
+    }
+  }
+  else {
+    const now = new Date();
+    if(now.getTime() > new Date(dateTimeResult.when).getTime()) {
+      internals.sendMessage(message.channel, `<@${message.author.id}> that's in the past.`, true);
+      return;
+    }
+  }
+
+  when = dateTimeResult.when;
+  log("Got when: ", typeof when, when);
+
+  // Who
+  let who = message.author.id;
+  let whoResult;
+  if(whoMessage) {
+    whoResult = internals.extractRemindWhoFrom(whoMessage, true);
+  }
+  else {
+    whoResult = internals.extractRemindWhoFrom(message, false);
+  }
+
+  if(!whoResult.isWho) {
+    if(whoResult.triedAll) {
+      internals.sendMessage(message.channel, `I won't use that @ tag.`);
+      return;
+    }
+
+    if(!whoMessage) {
+      return internals.promptFor(message, `Who should I remind <@${message.author.id}>?`)
+      .then((message2) => {
+        internals.executeRemindMeCommand(message, whenMessage, message2, whatMessage);
+      })
+      .catch(log);
+    }
+    else {
+      internals.sendMessage(message.channel, `<@${message.author.id}>, I have no idea who that is.`, true);
+      return;
+    }
+  }
+
+  who = whoResult.who;
+  log("Got who: ", typeof who, who);
+
+  // What
+  let what = message.content;
+  if(whatMessage) {
+    what = internals.extractRemindWhatFrom(whatMessage.content, [
+      whoResult.extract,
+      dateTimeResult.extract,
+      "remind",
+      "doodlebob",
+      `<@${client.user.id}>`
+    ]);
+  }
+  else {
+    what = internals.extractRemindWhatFrom(message.content, [
+      whoResult.extract,
+      dateTimeResult.extract,
+      "remind",
+      "doodlebob",
+      `<@${client.user.id}>`
+    ]);
+  }
+
+  if(!what) {
+    if(!whatMessage) {
+      return internals.promptFor(message, `What should I remind about <@${message.author.id}>?`)
+      .then((message2) => {
+        internals.executeRemindMeCommand(message, whenMessage, whoMessage, message2);
+      })
+      .catch(log);
+    }
+    else {
+      internals.sendMessage(message.channel, `<@${message.author.id}>, I don't know what to remind about.`, true)
+      return;
+    }
+  }
+
+  log("Got what: ", typeof what, what);
+
+  log("Done parsing remind command.");
+  const reminder = {
+    "channel": message.channel.id,
+    "who": who,
+    "what": what,
+    "when": new Date(when.toString())
+  };
+
+  db.reminders.create(reminder)
+  .then(() => {
+    client.setTimeout(internals.executeReminder, internals.msBetween(when), reminder);
+    internals.sendMessage(message.channel, `I'll remind <@${who}> ${what} ${new Date(when.toString()).toLocaleString()}`, true);
+  })
+  .catch((err) => {
+    log(err);
+    internals.sendMessage(message.channel, "Something went horribly wrong trying to save this reminder. Soiled it.");
+  });
+};
+
+internals.executeReminder = (reminder) => {
+  internals.sendMessage(client.channels.get(reminder.channel), `<@${reminder.who}>, reminder ${reminder.what}`, true);
+  db.reminders.destroy(reminder);
+};
+
+internals.msBetween = (a, b) => {
+  if(!b) {
+    b = new Date();
+  }
+
+  return Math.abs(a.getTime() - b.getTime());
+};
+
+internals.extractRemindWhoFrom = (message, outOfContext) => {
+  let who = "";
+  let fragment = message.content;
+
+  if(!outOfContext) {
+    fragment = internals.grabParamAfter(message, "remind")[0];
+  }
+
+  who = internals.extractRemindWhoFromFragment(fragment, message);
+
+  log(`>>${who}<<`);
+  switch(who) {
+    case "me":
+      return {
+        "isWho": true,
+        "who": message.author.id,
+        "extract": "me"
+      };
+    case "everyone":
+    case "@everyone":
+      log("Caught all tag use.");
+      return {
+        "isWho": false,
+        "triedAll": true
+      };
+    case "here":
+    case "@here":
+      log("Caught all tag use.");
+      return {
+        "isWho": false,
+        "triedAll": true
+      };
+    default:
+      if(who) {
+        return {
+          "isWho": true,
+          "who": who,
+          "extract": `<@${who}>`
+        };
+      }
+
+      return {
+        "isWho": false
+      };
+  }
+};
+
+internals.extractRemindWhoFromFragment = (string, message) => {
+  log("extractRemindWhoFromFragment", string);
+
+  if(string.trim().toLowerCase() === "me") {
+    return "me";
+  }
+
+  if(string.trim().toLowerCase() === "everyone") {
+    return "everyone";
+  }
+
+  if(string.trim().toLowerCase() === "here") {
+    return "here";
+  }
+
+  if(message.mentions.length) {
+    return message.mentions.first().id;
+  }
+
+  return string.trim();
+};
+
+internals.extractRemindWhatFrom = (string, phrases) => {
+  log("extractRemindWhatFrom", string);
+
+  let remindWhat = string;
+
+  _.forEach(phrases, (phrase) => {
+    remindWhat = internals.extractPhraseFromString(remindWhat, phrase)
+  });
+
+  log("extractRemindWhatFrom", remindWhat)
+  return remindWhat.trim();
+};
+
+internals.DOUBLE_SPACE = / +/g;
+internals.extractPhraseFromString = (string, phrase) => {
+  let newString = string.replace(new RegExp(phrase, "i"), "");
+  newString = newString.replace(internals.DOUBLE_SPACE, " ");
+  return newString;
+};
+
+internals.promptFor = (message, prompt) => {
+  return new Promise((resolve, reject) => {
+    internals.sendMessage(message.channel, prompt, true)
+    .then(() => {
+
+      message.channel.awaitMessages((m) => {
+        return (message.author.id === m.author.id);
+      }, {
+        "time": 60000,
+        "maxMatches": 1,
+        "errors": ["time"]
+      })
+      .then((messages) => {
+        return resolve(messages.first());
+      })
+      .catch(() => {
+        internals.sendMessage(message.channel, `Alright forget it <@${message.author.id}>.`);
+        return reject();
+      });
+    });
+  });
+};
+
+internals.grabParamAfter = (message, trigger, hotWords) => {
+  const words = _.words(message.content);
+  let consuming = false;
+
+  let i;
+  let param = [];
+  for(i = 0; i < words.length; i++) {
+    const word = words[i].toLowerCase();
+    if(consuming) {
+      if(_.includes(hotWords, word)) {
+        consuming = false;
+      }
+      else {
+        param.push(word);
+      }
+    }
+    else if(word.toLowerCase() === trigger) {
+      consuming = true;
+    }
+  }
+
+  log("grabParamAfter", trigger, param);
+  return param;
+};
+
+internals.extractDatetimeFrom = (message) => {
+  const parsedDate = chrono.parse(message);
+  const result = {
+    "isDatetime": (parsedDate.length > 0)
+  };
+
+  if(parsedDate.length > 0) {
+    result.when = parsedDate[0].start.date();
+    result.extract = parsedDate[0].text;
+  }
+
+  return result;
+};
