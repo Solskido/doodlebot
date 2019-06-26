@@ -696,7 +696,7 @@ internals.extractRemindWhoFromFragment = (string, message) => {
 };
 
 internals.extractRemindWhatFrom = (string, phrases) => {
-  log("extractRemindWhatFrom", string);
+  // log("extractRemindWhatFrom", string, phrases);
 
   let remindWhat = string;
 
@@ -704,14 +704,18 @@ internals.extractRemindWhatFrom = (string, phrases) => {
     remindWhat = internals.extractPhraseFromString(remindWhat, phrase)
   });
 
-  log("extractRemindWhatFrom", remindWhat)
+  // log("extractRemindWhatFrom AFTER", remindWhat)
   return remindWhat.trim();
 };
 
 internals.DOUBLE_SPACE = / +/g;
 internals.extractPhraseFromString = (string, phrase) => {
-  let newString = string.replace(new RegExp(phrase, "i"), "");
+  // log("extractPhraseFromString", `>${string}<`, `>${phrase}<`);
+
+  let newString = string.replace(new RegExp(`([\\n ]${_.escapeRegExp(phrase)}|^${_.escapeRegExp(phrase)})`, "i"), " ");
   newString = newString.replace(internals.DOUBLE_SPACE, " ");
+
+  // log("extractPhraseFromString AFTER", newString);
   return newString;
 };
 
