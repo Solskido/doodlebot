@@ -21,6 +21,7 @@ const _ = require("lodash");
 const db = require("./lib/db.js");
 const log = require("./lib/log.js");
 const chrono = require("chrono-node");
+const getInsult = require("insults").default;
 
 const internals = {};
 
@@ -304,6 +305,58 @@ internals.parseCommand = (message) => {
       }
     };
   }
+  else if(internals.isCommandsCommand(message)) {
+    log("...is commands command");
+
+    return {
+      "isCommand": true,
+      "execute": () => {
+        internals.sendMessage(message.channel, {
+          "embed": {
+            "color": 3447003,
+            "title": "What can Doodlebob do?",
+            //"description": "This is a test embed to showcase what they look like and what they can do.",
+            "fields": [
+              {
+                "name": "!commands",
+                "value": "This one you already know about."
+              },
+              {
+                "name": "Magic Conch, <question>?",
+                "value": "Ask the conch a yes or no question."
+              },
+              {
+                "name": "Doodlebob, remind <@someone/me> <something> <date>",
+                "value": "Ask me to remind you or someone else something at a later date. If your message includes multiple phrases I might interpret as a date, I will use the first one I find as the date to remind you. You can also say things like \"in 5 minutes\" or \"on Friday\"."
+              },
+              {
+                "name": "!insultme",
+                "value": "I fling a real zinger at you."
+              }
+            ],
+            "timestamp": new Date(),
+            "footer": {
+              "icon_url": client.user.avatarURL,
+              "text": "© solskido"
+            }
+          }
+        }, true);
+      }
+    };
+  }
+  else if(internals.isInsultCommand(message)) {
+    log("...is insult command");
+
+    return {
+      "isCommand": true,
+      "execute": () => {
+        // try {
+          // let insult = getInsult();
+        // } catch(e) { console.log(e); }
+        internals.sendMessage(message.channel, getInsult(), true);
+      }
+    };
+  }
   else if(internals.isRemindMeDebugCommand(message)) {
     log("...is remind me debug command");
 
@@ -473,6 +526,14 @@ internals.executeGibberishCommand = (channel) => {
 
 internals.isRemindMeDebugCommand = (message) => {
   return (message.content === "!allreminders");
+};
+
+internals.isCommandsCommand = (message) => {
+  return (message.content === "!commands");
+};
+
+internals.isInsultCommand = (message) => {
+  return (message.content === "!insultme");
 };
 
 internals.isRemindMeCommand = (message) => {
