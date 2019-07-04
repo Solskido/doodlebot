@@ -268,13 +268,7 @@ internals.parseCommand = (message) => {
         const parsedChooseCommand = internals.parseChooseCommand(message);
         if((parsedChooseCommand.selectionCount >= parsedChooseCommand.choices.length)
         || (parsedChooseCommand.selectionCount >= _.uniq(parsedChooseCommand.choices).length)) {
-          return internals.sendConchMessage(message.channel, {
-            "embed": {
-              "color": 11699390,
-              "title": "The magic conch says...",
-              "description": "...really?"
-            }
-          }, true);
+          return internals.sendConchMessage(message.channel, "...really?", true);
         }
 
         let picks = [];
@@ -285,13 +279,7 @@ internals.parseCommand = (message) => {
           parsedChooseCommand.choices = _.without(parsedChooseCommand, pick);
         }
 
-        return internals.sendConchMessage(message.channel, {
-          "embed": {
-            "color": 11699390,
-            "title": "The magic conch says...",
-            "description": picks.join(", ")
-          }
-        }, true);
+        return internals.sendConchMessage(message.channel, picks.join(", "), true);
       }
     };
   }
@@ -324,6 +312,10 @@ internals.parseCommand = (message) => {
               {
                 "name": "Magic Conch, <question>?",
                 "value": "Ask the conch a yes or no question."
+              },
+              {
+                "name": "Magic Conch pick <number>: <choice>, <choice>, <choice>",
+                "value": "Ask the conch to pick from a list. It supports any number up to 10 and the list should be comma separated."
               },
               {
                 "name": "Doodlebob, remind <@someone/me> <something> <date>",
