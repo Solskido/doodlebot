@@ -55,6 +55,28 @@ const CONCH = [
   "Nothing."
   //"Try asking again."
 ];
+const DROP_PREFIXES = [
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "We goin' to ",
+  "Yo home to "
+];
+const DROP_SUFFIXES = [
+  "",
+  "",
+  "",
+  "",
+  ", suckas.",
+  ". Fuck 'em up!",
+  ". Stay safe out there.",
+  ". It's got the good loot.",
+  " or no balls."
+];
 
 let lastChatted = 0;
 
@@ -101,10 +123,8 @@ client.on("message", (message) => {
     return;
   }
 
-  if(!internals.imSpamming()) {
-    log("Executing a command");
-    command.execute();
-  }
+  log("Executing a command");
+  command.execute();
 });
 
 internals.isConchCommand = (message) => {
@@ -283,6 +303,203 @@ internals.parseCommand = (message) => {
       }
     };
   }
+  else if(internals.isDropCommand(message)) {
+    log("...is drop command");
+
+    return {
+      "isCommand": true,
+      "execute": () => {
+        const words = _.words(message.content);
+        db.dropzones.distinct("map")
+        .then((allMaps) => {
+          log(allMaps);
+
+          log(`Got all maps: ${allMaps.join(", ")}`);
+
+          const mapChoice = _.intersection(allMaps, words);
+          if(!mapChoice.length) {
+            return internals.sendMessage(message.channel, `I only know about these maps (these are case sensitive): ${allMaps.join(", ")}.`, true);
+          }
+          else if(mapChoice.length > 1) {
+            return internals.sendMessage(message.channel, "...what?", true);
+          }
+
+          return db.dropzones.find({
+            "map": mapChoice[0]
+          })
+          .then((allZones) => {
+            if(_.isEmpty(allZones)) {
+              return internals.sendMessage(message.channel, "I don't know any zones in this map yet. Try: !braddzone <game> <map> <zone>", true);
+            }
+
+            return internals.sendMessage(message.channel, `${_.sample(DROP_PREFIXES)}${_.sample(allZones).zone}${_.sample(DROP_SUFFIXES)}`, true);
+          });
+        })
+        .catch(log);
+      }
+    }
+  }
+  else if(internals.isDropControlCommand(message)) {
+    log("...is drop control command");
+
+    return {
+      "isCommand": true,
+      "execute": () => {
+        const splitMessage = message.content.split(" ");
+        log(`Split message: ${splitMessage.join(", ")}`);
+
+        switch(splitMessage[0]) {
+          case "!brwhatis":
+            log("Is what is command.");
+
+            const query = {};
+            switch(splitMessage.length) {
+              case 1:
+                break;
+              case 2:
+                query.$or = [
+                  {
+                    "game": splitMessage[1]
+                  },
+                  {
+                    "map": splitMessage[1]
+                  }
+                ];
+                break;
+              default:
+                return internals.sendMessage(message.channel, "Try: !brwhatis <game/map>");
+            }
+
+            log(query);
+            return db.dropzones.find(query)
+            .then((allZones) => {
+              log(JSON.stringify(allZones, null, 2));
+              if(_.isEmpty(allZones)) {
+                return internals.sendMessage(message.channel, "There are no Battle Royale dropzones yet. Try: !braddzone <game> <map> <zone>");
+              }
+
+              fields = [];
+              const games = _.uniq(_.map(allZones, "game"));
+              _.forEach(games, (game) => {
+                const gameZones = _.filter(allZones, {
+                  "game": game
+                });
+
+                const maps = _.uniq(_.map(gameZones, "map"));
+
+                let output = "";
+                _.forEach(maps, (map) => {
+                  const mapZones = _.filter(gameZones, { "map": map });
+                  output += `${map}: ${_.map(mapZones, "zone").join(", ")}\n`;
+                });
+
+                fields.push({
+                  "name": game,
+                  "value": output
+                });
+              });
+
+              return internals.sendMessage(message.channel, {
+                "embed": {
+                  "color": 3447003,
+                  "title": "Battle Royale zone search results",
+                  "fields": fields
+                }
+              }, true);
+            })
+            .catch(log);
+
+          case "!braddzone":
+            log("Is add zone command.");
+
+            if(splitMessage.length !== 4) {
+              return internals.sendMessage(message.channel, "Try: !braddzone <game> <map> <zone>", true);
+            }
+
+            const newZone = {
+              "game": splitMessage[1],
+              "map": splitMessage[2],
+              "zone": splitMessage[3]
+            };
+
+            return db.dropzones.find(newZone)
+            .then((existingZone) => {
+              log(existingZone);
+
+              if(_.isEmpty(existingZone)) {
+                return db.dropzones.create(newZone)
+                .then(() => {
+                  message.react("✅");
+                });
+              }
+
+              return internals.sendMessage(message.channel, "That zone already exists.", true);
+            })
+            .catch(log);
+
+          case "!brremovezone":
+            log("Is remove zone command.");
+
+            if(splitMessage.length !== 4) {
+              return internals.sendMessage(message.channel, "Try: !brremovezone <game> <map> <zone>", true);
+            }
+
+            return db.dropzones.destroy({
+              "game": splitMessage[1],
+              "map": splitMessage[2],
+              "zone": splitMessage[3]
+            })
+            .then(() => {
+              message.react("✅");
+            })
+            .catch(log);
+
+          case "!brremovegame":
+            log("Is remove game command.");
+
+            if(!internals.isBotAdmin(message.member)) {
+              return internals.sendMessage(message.channel, "Woah there partner, that's a dangerous command. Only admins get to do that.", true);
+            }
+
+            if(splitMessage.length !== 2) {
+              return internals.sendMessage(message.channel, "Try: !brremovegame <game>", true);
+            }
+
+            return db.dropzones.destroy({
+              "game": splitMessage[1]
+            })
+            .then(() => {
+              message.react("✅");
+            })
+            .catch(log);
+
+          case "!brremovemap":
+            log("Is remove map command.");
+
+            if(!internals.isBotAdmin(message.member)) {
+              return internals.sendMessage(message.channel, "Woah there partner, that's a dangerous command. Only admins get to do that.", true);
+            }
+
+            if(splitMessage.length !== 3) {
+              return internals.sendMessage(message.channel, "Try: !brremovemap <game> <map>", true);
+            }
+
+            return db.dropzones.destroy({
+              "game": splitMessage[1],
+              "map": splitMessage[2]
+            })
+            .then(() => {
+              message.react("✅");
+            })
+            .catch(log);
+
+          default:
+            log(`Unknown drop control command: ${message.content}.`);
+            break;
+        }
+      }
+    };
+  }
   else if(internals.isConchCommand(message)) {
     log("...is conch command");
 
@@ -342,9 +559,6 @@ internals.parseCommand = (message) => {
     return {
       "isCommand": true,
       "execute": () => {
-        // try {
-          // let insult = getInsult();
-        // } catch(e) { console.log(e); }
         internals.sendMessage(message.channel, getInsult(), true);
       }
     };
@@ -475,9 +689,10 @@ internals.generateGibberish = (a, b) => {
 };
 
 internals.sendMessage = (channel, message, always) => {
-  if(!always
-  && internals.imSpamming()) {
-    return Promise.reject(new Error("Spamming"));
+  if(!always) {
+    if(internals.imSpamming()) {
+      return Promise.reject(new Error("Spamming"));
+    }
   }
 
   return channel.send(message)
@@ -724,6 +939,35 @@ internals.extractRemindWhoFrom = (message, outOfContext) => {
         "isWho": false
       };
   }
+};
+
+internals.isDropCommand = (message) => {
+  if(!internals.isTalkingToMe(message)) {
+    return false;
+  }
+
+  const words = _.invokeMap(_.words(message), String.prototype.toLowerCase);
+  if(_.includes(words, "where")
+  && (_.includes(words, "drop")
+    || _.includes(words, "droppin")
+    || _.includes(words, "dropping"))
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+internals.isDropControlCommand = (message) => {
+  log(`Checking isDropControlCommand: ${message}`)
+
+  return _.includes([
+    "!brwhatis",
+    "!braddzone",
+    "!brremovezone",
+    "!brremovemap",
+    "!brremovegame"
+  ], message.content.split(" ")[0]);
 };
 
 internals.extractRemindWhoFromFragment = (string, message) => {
