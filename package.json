@@ -1,14 +1,15 @@
 {
   "name": "Doodlebob",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Bwah",
   "main": "app.js",
   "author": "solskido",
   "dependencies": {
+    "bluebird": "^3.5.5",
     "chrono-node": "^1.3.11",
     "discord.js": "11.5.1",
     "insults": "^0.1.3",
-    "lodash": "^4.17.11",
+    "lodash": "^4.17.15",
     "mongodb": "3.2.7",
     "node": "10.16.0"
   },
