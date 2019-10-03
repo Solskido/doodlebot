@@ -265,8 +265,9 @@ doodlebot.client.on("message", (message) => {
     return;
   }
 
-  if(!util.messageIsFromAnyAdmin(message)) {
-    log(`A non-admin user (${member.user.username}#${member.user.discriminator}) attempted an admin bot command.`);
+  if(command.admin
+  && !util.messageIsFromAnyAdmin(message)) {
+    log(`A non-admin user (${message.author.username}#${message.author.discriminator}) attempted an admin bot command.`);
     message.react("❌");
     return;
   }
